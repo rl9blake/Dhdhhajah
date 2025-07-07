@@ -11,7 +11,7 @@ local ESPEnabled = false
 local maxDistance = 36
 
 local function IsEnemy(player)
-	return player.Team ~= nil and LocalPlayer.Team ~= nil and player.TeamColor ~= LocalPlayer.TeamColor
+	return player.Team and LocalPlayer.Team and player.TeamColor ~= LocalPlayer.TeamColor
 end
 
 -- GUI
@@ -72,7 +72,11 @@ local function CreateESP(player)
 	name.Outline = true
 	name.Visible = false
 
-	espObjects[player] = {Box = box, Name = name}
+	local health = Drawing.new("Line")
+	health.Thickness = 3
+	health.Visible = false
+
+	espObjects[player] = {Box = box, Name = name, Health = health}
 end
 
 local function RemoveESP(player)
@@ -98,7 +102,7 @@ end)
 
 Players.PlayerRemoving:Connect(RemoveESP)
 
--- Raycast Visibilidade
+-- Visibilidade
 local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Blacklist
 rayParams.IgnoreWater = true
@@ -118,39 +122,54 @@ RunService.RenderStepped:Connect(function()
 	local shortest = math.huge
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") and player.Character:FindFirstChild("HumanoidRootPart") and IsEnemy(player) then
+		if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") and IsEnemy(player) then
 			local head = player.Character.Head
 			local hrp = player.Character.HumanoidRootPart
-
+			local humanoid = player.Character.Humanoid
 			local distance = (hrp.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
 			local visible = IsVisible(head)
 
-			if ESPEnabled then
-				local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
-				local esp = espObjects[player]
-				if onScreen and esp then
-					local headPos = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
-					local footPos = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
-					local height = math.abs(footPos.Y - headPos.Y)
-					local width = height / 2
+			-- ESP
+			local esp = espObjects[player]
+			if ESPEnabled and esp then
+				local headPos = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+				local footPos = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+				local centerPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+				local height = math.abs(footPos.Y - headPos.Y)
+				local width = height / 2
 
+				if onScreen then
 					esp.Box.Size = Vector2.new(width, height)
-					esp.Box.Position = Vector2.new(screenPos.X - width / 2, screenPos.Y - height / 2)
+					esp.Box.Position = Vector2.new(centerPos.X - width / 2, centerPos.Y - height / 2)
 					esp.Box.Visible = true
 					esp.Box.Color = visible and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
 
 					esp.Name.Text = player.Name
-					esp.Name.Position = Vector2.new(screenPos.X, screenPos.Y - height / 2 - 15)
+					esp.Name.Position = Vector2.new(centerPos.X, centerPos.Y - height / 2 - 15)
 					esp.Name.Color = esp.Box.Color
 					esp.Name.Visible = true
+
+					local hpPercent = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
+					local barTop = Vector2.new(esp.Box.Position.X - 5, esp.Box.Position.Y)
+					local barBottom = Vector2.new(barTop.X, esp.Box.Position.Y + height)
+					local barCurrent = Vector2.new(barTop.X, barTop.Y + height * (1 - hpPercent))
+
+					esp.Health.From = barBottom
+					esp.Health.To = barCurrent
+					esp.Health.Color = Color3.fromRGB(0, 255, 0)
+					esp.Health.Visible = true
 				else
-					if esp then
-						esp.Box.Visible = false
-						esp.Name.Visible = false
-					end
+					esp.Box.Visible = false
+					esp.Name.Visible = false
+					esp.Health.Visible = false
 				end
+			elseif esp then
+				esp.Box.Visible = false
+				esp.Name.Visible = false
+				esp.Health.Visible = false
 			end
 
+			-- Aimbot
 			if AimbotEnabled and distance <= maxDistance and visible then
 				local screenPos = Camera:WorldToViewportPoint(head.Position)
 				local mouseDist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(Mouse.X, Mouse.Y)).Magnitude
@@ -159,3 +178,11 @@ RunService.RenderStepped:Connect(function()
 					closest = head
 				end
 			end
+		end
+	end
+
+	if AimbotEnabled and closest then
+		local dir = (closest.Position - Camera.CFrame.Position).Unit
+		Camera.CFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + dir)
+	end
+end)
